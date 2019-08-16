@@ -1,0 +1,250 @@
+---
+title: "APT"
+author: "Arunabha"
+date: "16 August 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### **Arbritage Pricing Theory,** & Modelling
+<br>
+
+The history of asset pricing and associated models have witnessed numerous landmark developments over the past century, each standing on the shoulders of the previous and striving to to reach above and beyond. **Arbritage Pricing Theory (APT)** proposed by economist Stephen Ross in 1976 and published with real world data in possible use case in the seminal work published [in 1980](http://doi.wiley.com/10.1111/j.1540-6261.1980.tb02197.x). This model builds forward on Markowitz Portfolio Theory (MPT), its application in selecting assets using Capital Asset Pricing Model (CAPM) and their limitations. While CAPM alongside with MPT considers previous individual asset returns, they don't allow to mathematically (& thus more objectively) to incorporate various macroeconomic and other factors in this model. Over long periods of time, even inflation eats into absolute returns observed over time. APT provides a mathematical framework to handle such issues, one of the first of its kind.
+<br>
+
+APT model uses the same mathematical strategy of linear regression as with CAPM except instead of being limited to just market risk measured in comparison to a market index, APT allows of any number of parameters. They can be market risk as in CAPM, additional parameters like *Small Minus Big (SmB) (market capitalization)* and *High Minus Low (HmL) (book to market ratio)* like in **Fama-French model** and they can be disparately other factors like inflation or political risk in the market place of the country or build up inventory items on the accounting sheets of a company. The model allows such flexibility for users, often improved by leveraing insights from experienced fund managers. 
+<br>
+
+APT model can thus be generalized and depicted by the following mathematical equation:
+<br>
+
+### r~j~ = $\alpha$~j~ + $\lambda$~j1~f~1~ + $\lambda$~j2~f~2~ + ... + $\lambda$~jn~f~n~ + $\epsilon$~j~
+<br>
+
+where the different linearly added terms can be different factors like political risk or inflation or SmB or HmL or others. As linear regression model is used for prediction, the underlying assumptions of linear regression are also implied for feature selection in APT model.
+<br>
+
+As part of this assignment, we model **NIFTY monthly returns** as a function of **monthly 10 yr G-Ssec bond yields** and **monthly inflation**.
+<br>
+
+### **Data collection and preprocessing**
+<br>
+
+**Loading necessary libraries first as follows:**
+<br>
+
+```{r children_1, echo=TRUE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("~/QRS/Finance Stuff/APT")
+
+libraries_required = c('lubridate', 'xts')
+
+for(i in seq(libraries_required))
+{
+  if(!(libraries_required[i] %in% rownames(installed.packages())))
+  {
+    try(expr = install.packages('libraries_required[i]'), silent = T)
+  }
+  try(expr = library(libraries_required[i], character.only = T), silent = T)
+}
+options(warn=-1)
+```
+<br>
+
+**Next, we obtain India's 10yr G-Sec bond yield [from investing.com](https://in.investing.com/rates-bonds/india-10-year-bond-yield-historical-data). We save in file 'India 10-Year Bond Yield Historical Data Monthly.csv', load it and have a look.**
+<br>
+
+```{r children_2, echo=TRUE}
+India_10_yr_bond <- read.csv(file = "India 10-Year Bond Yield Historical Data Monthly.csv", 
+                             header = T, stringsAsFactors = F)
+
+head(India_10_yr_bond,10)
+```
+<br>
+
+**Next, we utilise the date column to generate the time series. We also change the date to only year and month are our model is for monthly data (same frequency as inflation data, which we load later).**
+<br>
+```{r children_3, echo=TRUE}
+India_10_yr_bond$Date <- as.Date(India_10_yr_bond$Date, format="%d/%m/%y")
+
+head(India_10_yr_bond)
+
+India_10_yr_bond$Date <- format(India_10_yr_bond$Date, format="%y-%m")
+
+head(India_10_yr_bond)
+```
+**Next, we load our standard NIFTY time series data.**
+<br>
+```{r children_4, echo=TRUE}
+NIFTY_monthly <- read.csv(file = "NIFTY_monthly.csv", header = T, stringsAsFactors = F)
+
+head(NIFTY_monthly)
+
+NIFTY_monthly$Date <- as.Date(NIFTY_monthly$Date, format="%d %b %y")
+
+head(NIFTY_monthly)
+
+NIFTY_monthly$Date <- format(NIFTY_monthly$Date, format="%y-%m")
+
+head(NIFTY_monthly)
+
+NIFTY_monthly <- NIFTY_monthly[,1:5]
+
+head(NIFTY_monthly)
+
+temp_name <- colnames(NIFTY_monthly)
+
+colnames(NIFTY_monthly) <- temp_name
+
+head(NIFTY_monthly)
+
+```
+
+**Next, we combine by 'Date' column, NIFTY returns and the bond yield data.**
+
+```{r children_5, echo=TRUE}
+Combined <- merge(x = NIFTY_monthly[,c(1,5)], y = India_10_yr_bond[,1:2], by = "Date", all.y = TRUE)
+
+colnames(Combined) <- c("Date","NIFTY_Close","India_10_yr_bond_RF")
+
+# head(Combined,40)
+tail(Combined,40)
+
+Combined <- na.omit(Combined)
+
+head(Combined)
+
+Combined$NIFTY_ret <- c(NA,100*diff(Combined$NIFTY_Close)/Combined$NIFTY_Close[-1])
+  
+head(Combined)
+
+Combined <- na.omit(Combined)
+
+head(Combined)
+
+```
+<br>
+**Converting annual bond yield to monthly**
+```{r children_6, echo=TRUE}
+Combined$India_10_yr_bond_RF_monthly <- (((((Combined$India_10_yr_bond_RF/100)+1)^10)^(1/(10*12))) - 1)*100
+
+head(Combined,10)
+```
+
+<br>
+**Calculating market risk premium (MRP)**
+
+```{r children_7, echo=TRUE}
+for (i in seq(dim(Combined)[[1]]))
+{
+  Combined[i,"MRP"] <- mean(Combined[1:i,"NIFTY_ret"]) - Combined[i,"India_10_yr_bond_RF_monthly"]
+}
+
+head(Combined,20)
+tail(Combined,20)
+```
+
+<br>
+
+With Market Risk Premium and NIFTY index returns in place, we next proceed to add monthly inflation data to our time series for linear regression of the APT model. We obtain the monthly inflation data on India from the website: https://www.inflation.eu/inflation-rates/india/historic-inflation/cpi-inflation-india-2019.aspx
+
+<br>
+We copy the monthly figures onto a csv and process it further to prepare for integration with the inflation time series data with NIFTY returns and 10-year G-Sec bond yields. **We also extract the current month from the first column and use it to build the time series.**
+
+```{r children_8, echo=TRUE}
+India_monthly_Inflation <- read.csv(file = "inflation_India_monthly_basis.csv", header = T,
+                                    stringsAsFactors = F)
+
+head(India_monthly_Inflation)
+
+for(j in seq(dim(India_monthly_Inflation)[1]))
+{
+  temp_vector <- rev(strsplit(India_monthly_Inflation[j,1], split = ' ')[[1]])[1:2]
+  
+  temp_vector_2 <- strsplit(temp_vector[2],split='')[[1]]
+  
+  temp_vector_2[1] <- toupper(temp_vector_2[1])
+  
+  temp_vector[2] <- paste0(temp_vector_2, collapse = '')
+  
+  temp_vector[3] <- "01"
+  
+  India_monthly_Inflation[j,"Date"] <- paste0(temp_vector, collapse = ' ')
+}
+
+head(India_monthly_Inflation)
+tail(India_monthly_Inflation)
+
+India_monthly_Inflation <- India_monthly_Inflation[2:3]
+
+head(India_monthly_Inflation)
+tail(India_monthly_Inflation)
+
+India_monthly_Inflation$inflation <- as.numeric(gsub("%", "",India_monthly_Inflation$inflation))
+
+head(India_monthly_Inflation)
+tail(India_monthly_Inflation)
+
+colnames(India_monthly_Inflation) <- c("Inflation_%","Date")
+
+head(India_monthly_Inflation)
+tail(India_monthly_Inflation)
+
+India_monthly_Inflation$Date <- as.Date(India_monthly_Inflation$Date, format="%Y %B %d")
+
+head(India_monthly_Inflation)
+tail(India_monthly_Inflation)
+
+India_monthly_Inflation$Date <- format(India_monthly_Inflation$Date, format="%y-%m")
+
+head(India_monthly_Inflation)
+tail(India_monthly_Inflation)
+
+head(Combined)
+tail(Combined)
+```
+
+<br>
+**Now, with this inflation time series dataframe, we combine using left join with the previous data frame consisting of the NIFTY returns and 10-year bond yields.**
+```{r children_9, echo=TRUE}
+All_Factors <- merge(x = Combined, y = India_monthly_Inflation, by = "Date", all.y = TRUE)
+
+head(All_Factors)
+tail(All_Factors)
+
+All_Factors <- na.omit(All_Factors)
+
+head(All_Factors)
+tail(All_Factors)
+dim(All_Factors)
+
+APT_data <- All_Factors[,c("NIFTY_ret", "MRP", "Inflation_%")]
+
+head(APT_data)
+tail(APT_data)
+dim(APT_data)
+```
+
+<br>
+
+**With the data ready, we finally proceed onto the regression for APT as follows with NIFTY returns being the:**
+```{r children_10, echo=TRUE}
+summary(lm(APT_data$NIFTY_ret~APT_data$MRP+APT_data$`Inflation_%`))
+```
+
+### **Conclusion of our Arbritage Pricing Theory modelling**
+<br>
+We see that with alpha = 0.1, both **Inflation** and **Market Risk Premium** are **significant**.
+<br>
+
+With alpha = 0.05 cutoff, **Inflation** is **insignificant** whereas **Market Risk Premium** is **significant**.
+
+**Lastly, we close by clearing the workspace**
+```{r children_11, echo=TRUE}
+rm(list=ls())
+```
